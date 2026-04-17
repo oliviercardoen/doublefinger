@@ -1,3 +1,16 @@
+"""doublefinger — CLI entry point.
+
+Exposes two sub-commands via argparse (stdlib only):
+
+    crawl   Crawl a website and save pages as Markdown files.
+    list    List all existing crawl output directories.
+
+Usage::
+
+    python doublefinger.py crawl <url> [options]
+    python doublefinger.py list
+"""
+
 import argparse
 import asyncio
 import sys
@@ -8,7 +21,17 @@ from crawler import derive_match_pattern, crawl_site
 from outputs import derive_output_name, ensure_output_dir, list_outputs
 
 
-def cmd_crawl(args, cfg):
+def cmd_crawl(args: argparse.Namespace, cfg: dict) -> None:
+    """Execute the ``crawl`` sub-command.
+
+    Resolves the match pattern and output directory from CLI flags and
+    config, creates the output directory, then delegates to
+    :func:`crawler.crawl_site` via ``asyncio.run``.
+
+    Args:
+        args: Parsed CLI arguments (from :func:`build_parser`).
+        cfg: Effective configuration dict (overrides already applied).
+    """
     match_pattern = args.match or derive_match_pattern(args.url)
 
     output_base = Path(cfg["output"]["base_dir"])
@@ -33,7 +56,17 @@ def cmd_crawl(args, cfg):
     )
 
 
-def cmd_list(args, cfg):
+def cmd_list(args: argparse.Namespace, cfg: dict) -> None:
+    """Execute the ``list`` sub-command.
+
+    Prints a formatted table of all crawl output directories found under
+    ``cfg["output"]["base_dir"]``, including file count, human-readable
+    total size, and last modification date.
+
+    Args:
+        args: Parsed CLI arguments (unused, kept for uniform signature).
+        cfg: Effective configuration dict.
+    """
     base_dir = Path(cfg["output"]["base_dir"])
     entries = list_outputs(base_dir)
 
@@ -49,6 +82,14 @@ def cmd_list(args, cfg):
 
 
 def _human_size(size: int) -> str:
+    """Convert a byte count to a human-readable string (B, KB, MB, GB, TB).
+
+    Args:
+        size: File size in bytes.
+
+    Returns:
+        A string such as ``"1.4KB"`` or ``"23.0MB"``.
+    """
     for unit in ("B", "KB", "MB", "GB"):
         if size < 1024:
             return f"{size:.1f}{unit}"
@@ -56,7 +97,15 @@ def _human_size(size: int) -> str:
     return f"{size:.1f}TB"
 
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
+    """Build and return the top-level argument parser.
+
+    Defines the ``crawl`` and ``list`` sub-commands with all their
+    arguments and help strings.
+
+    Returns:
+        A fully configured :class:`argparse.ArgumentParser` instance.
+    """
     parser = argparse.ArgumentParser(
         prog="doublefinger",
         description="CLI wrapper around Crawl4AI — crawl websites to clean Markdown.",
@@ -80,7 +129,12 @@ def build_parser():
     return parser
 
 
-def main():
+def main() -> None:
+    """Parse CLI arguments, load config, apply overrides, and dispatch to a sub-command.
+
+    Exits with status 1 if no sub-command is given or if the config file
+    is malformed.
+    """
     parser = build_parser()
     args = parser.parse_args()
 
@@ -94,6 +148,8 @@ def main():
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    # Collect only the CLI flags that were explicitly provided so that
+    # apply_overrides does not stomp on config defaults unnecessarily.
     overrides = {}
     if hasattr(args, "output_dir") and args.output_dir:
         overrides["output_dir"] = args.output_dir

@@ -1,3 +1,12 @@
+"""Crawling logic for doublefinger, built on top of Crawl4AI's AsyncWebCrawler.
+
+Implements:
+- URL match-pattern derivation from a seed URL.
+- A breadth-first async crawl loop that writes one Markdown file per page.
+- Graceful handling of failed pages (warning, no crash).
+- Optional headless-browser mode and cache bypass.
+"""
+
 import fnmatch
 import warnings
 from pathlib import Path
@@ -6,12 +15,32 @@ from urllib.parse import urlparse
 try:
     from crawl4ai import AsyncWebCrawler
 except ImportError:
+    # Defer the hard error to runtime so the module can still be imported
+    # and tested without Crawl4AI installed.
     AsyncWebCrawler = None
 
 from outputs import derive_page_filename
 
 
 def derive_match_pattern(url: str) -> str:
+    """Auto-derive a glob pattern that covers the subtree of a seed URL.
+
+    The pattern is ``<scheme>://<host>/<first-path-segment>/**``.
+    When the seed URL has no path segment (root URL), the pattern is
+    ``<scheme>://<host>/**``.
+
+    Examples::
+
+        https://iac.goffinet.org/ansible-fondamental/  →  https://iac.goffinet.org/ansible-fondamental/**
+        https://iac.goffinet.org/                      →  https://iac.goffinet.org/**
+        https://docs.example.com/guide/intro           →  https://docs.example.com/guide/**
+
+    Args:
+        url: The seed URL passed to the crawl command.
+
+    Returns:
+        A glob pattern string compatible with :func:`fnmatch.fnmatch`.
+    """
     parsed = urlparse(url)
     base = f"{parsed.scheme}://{parsed.netloc}"
     segments = [s for s in parsed.path.split("/") if s]
@@ -21,6 +50,7 @@ def derive_match_pattern(url: str) -> str:
 
 
 def _url_matches(url: str, pattern: str) -> bool:
+    """Return True if ``url`` matches the given glob ``pattern``."""
     return fnmatch.fnmatch(url, pattern)
 
 
@@ -32,6 +62,31 @@ async def crawl_site(
     use_browser: bool,
     no_cache: bool,
 ) -> None:
+    """Crawl a website breadth-first and write each page as a Markdown file.
+
+    Starting from ``seed_url``, the crawler follows internal links whose
+    href matches ``match_pattern``. Each successfully crawled page is saved
+    as a ``.md`` file inside ``output_dir`` using the filename derived by
+    :func:`outputs.derive_page_filename`.
+
+    Failed pages (``result.success is False``) emit a :class:`UserWarning`
+    and are skipped without interrupting the crawl.
+
+    Args:
+        seed_url: The first URL to crawl. Also used as the starting point
+            for the BFS queue.
+        match_pattern: Glob pattern (e.g. ``https://example.com/docs/**``)
+            used to decide which internal links to follow.
+        max_pages: Maximum number of pages to crawl. ``0`` means unlimited.
+        output_dir: Directory where Markdown files will be written.
+            Must already exist (see :func:`outputs.ensure_output_dir`).
+        use_browser: When ``True``, Crawl4AI uses a Playwright headless
+            Chromium browser instead of a plain HTTP fetch.
+        no_cache: When ``True``, bypasses Crawl4AI's built-in response cache.
+
+    Raises:
+        SystemExit: If Crawl4AI is not installed.
+    """
     if AsyncWebCrawler is None:
         raise SystemExit("Run ./build.sh to install dependencies.")
 
@@ -39,8 +94,8 @@ async def crawl_site(
     if use_browser:
         crawler_kwargs["browser_type"] = "chromium"
 
-    visited = set()
-    queue = [seed_url]
+    visited: set[str] = set()
+    queue: list[str] = [seed_url]
     pages_crawled = 0
 
     async with AsyncWebCrawler(**crawler_kwargs) as crawler:
@@ -70,6 +125,7 @@ async def crawl_site(
             filename = derive_page_filename(url)
             (output_dir / filename).write_text(result.markdown or "")
 
+            # Enqueue internal links that fall within the match pattern.
             if hasattr(result, "links") and result.links:
                 for link in result.links.get("internal", []):
                     href = link.get("href", "") if isinstance(link, dict) else link

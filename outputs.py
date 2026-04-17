@@ -1,3 +1,12 @@
+"""Output directory and filename management for doublefinger.
+
+Provides helpers to:
+- Derive a structured directory name from a seed URL (reversed hostname + first path segment).
+- Derive a per-page Markdown filename from a page URL.
+- Create the output directory on disk, with a clear error on failure.
+- List all existing crawl output directories with file count, size, and modification time.
+"""
+
 import re
 from datetime import datetime
 from pathlib import Path
@@ -5,10 +14,30 @@ from urllib.parse import urlparse
 
 
 def _sanitize(segment: str) -> str:
+    """Lowercase a string and replace any character outside [a-z0-9.-] with a hyphen."""
     return re.sub(r"[^a-z0-9.\-]", "-", segment.lower())
 
 
 def derive_output_name(url: str) -> str:
+    """Derive a filesystem-safe directory name from a seed URL.
+
+    The name is built by reversing the hostname labels and appending the
+    first non-empty path segment (if any), separated by a dot.
+
+    Examples::
+
+        https://iac.goffinet.org/ansible-fondamental/  →  org.goffinet.iac.ansible-fondamental
+        https://iac.goffinet.org/                      →  org.goffinet.iac
+        https://docs.example.com/guide/intro           →  com.example.docs.guide
+        https://example.com                            →  com.example
+        https://sub.domain.example.co.uk/path/to/page →  uk.co.example.domain.sub.path
+
+    Args:
+        url: The seed URL used to start a crawl.
+
+    Returns:
+        A lowercase, dot-and-hyphen-safe directory name string.
+    """
     parsed = urlparse(url)
     host_parts = parsed.hostname.split(".")
     reversed_host = ".".join(reversed(host_parts))
@@ -22,6 +51,26 @@ def derive_output_name(url: str) -> str:
 
 
 def derive_page_filename(url: str) -> str:
+    """Derive a Markdown filename from a crawled page URL.
+
+    All non-empty path segments are joined with hyphens and suffixed with
+    ``.md``. A root URL (no path segments) maps to ``index.md``.
+
+    Examples::
+
+        https://iac.goffinet.org/ansible-fondamental/installation-ansible/
+            →  ansible-fondamental-installation-ansible.md
+        https://iac.goffinet.org/ansible-fondamental/
+            →  ansible-fondamental.md
+        https://iac.goffinet.org/
+            →  index.md
+
+    Args:
+        url: The URL of the page that was crawled.
+
+    Returns:
+        A lowercase, hyphen-safe ``.md`` filename.
+    """
     parsed = urlparse(url)
     segments = [s for s in parsed.path.split("/") if s]
 
@@ -33,6 +82,14 @@ def derive_page_filename(url: str) -> str:
 
 
 def ensure_output_dir(path: Path) -> None:
+    """Create the output directory (and any missing parents) if it does not exist.
+
+    Args:
+        path: The directory path to create.
+
+    Raises:
+        SystemExit: If the directory cannot be created (e.g. permission denied).
+    """
     try:
         path.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -40,6 +97,24 @@ def ensure_output_dir(path: Path) -> None:
 
 
 def list_outputs(base_dir: Path) -> list:
+    """Return metadata for every crawl output directory found under ``base_dir``.
+
+    Each entry in the returned list is a dict with the keys:
+
+    - ``name`` (str): directory name.
+    - ``file_count`` (int): number of ``.md`` files inside.
+    - ``total_size`` (int): combined size of all ``.md`` files in bytes.
+    - ``last_modified`` (str): most recent ``.md`` file modification time,
+      formatted as ``YYYY-MM-DD HH:MM``. Falls back to the directory mtime
+      when the directory contains no ``.md`` files.
+
+    Args:
+        base_dir: Root directory that contains crawl output sub-directories.
+
+    Returns:
+        A list of metadata dicts sorted alphabetically by directory name.
+        Returns an empty list if ``base_dir`` does not exist.
+    """
     results = []
     if not base_dir.exists():
         return results
