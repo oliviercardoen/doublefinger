@@ -58,5 +58,11 @@ class TestConfigDefaults(unittest.TestCase):
         self.assertEqual(result["crawl"]["default_max_pages"], 5)
 
 
+class TestEntryPoint(unittest.TestCase):
+    def test_entry_point_importable(self):
+        import doublefinger
+        self.assertTrue(hasattr(doublefinger, "main"))
+
+
 if __name__ == "__main__":
     unittest.main()

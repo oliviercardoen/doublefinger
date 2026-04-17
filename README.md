@@ -20,7 +20,8 @@ doublefinger/
 ├── crawler.py        # Crawl4AI crawling logic, URL pattern derivation
 ├── outputs.py        # Output directory naming, page filename derivation, list command
 ├── config.py         # Config file load/write (~/.config/doublefinger/config.toml)
-├── build.sh          # Creates venv, installs dependencies, runs playwright install
+├── install.sh        # System-wide installation (writes /usr/local/bin/doublefinger)
+├── setup.sh          # Development environment setup (venv + deps + playwright)
 ├── requirements.txt  # crawl4ai, tomli (Python < 3.11)
 └── tests/
     ├── __init__.py
@@ -102,41 +103,54 @@ Lists all crawl output directories under `base_dir`. Displays directory name, fi
 
 ## How to Run
 
-**1. Build the environment:**
+**1. Clone and install:**
 
 ```bash
-./build.sh
+git clone https://github.com/oliviercardoen/doublefinger
+cd doublefinger
+./install.sh
 ```
 
-**2. Activate:**
+`install.sh` creates the virtualenv, installs all dependencies, and writes a
+launcher to `/usr/local/bin/doublefinger`. No manual venv activation is ever
+needed again.
 
-```bash
-source .venv/bin/activate
-```
-
-**3. Crawl a site:**
+**2. Crawl a site:**
 
 ```bash
 # Crawl the core section of docs.crawl4ai.com
-python doublefinger.py crawl https://docs.crawl4ai.com/core/
+doublefinger crawl https://docs.crawl4ai.com/core/
 
 # Limit to 10 pages
-python doublefinger.py crawl https://docs.crawl4ai.com/core/ --max-pages 10
+doublefinger crawl https://docs.crawl4ai.com/core/ --max-pages 10
 
 # Use headless browser mode
-python doublefinger.py crawl https://docs.crawl4ai.com/core/ --browser
+doublefinger crawl https://docs.crawl4ai.com/core/ --browser
 
 # Custom output directory
-python doublefinger.py crawl https://docs.crawl4ai.com/core/ --output-dir /tmp/my-crawl
+doublefinger crawl https://docs.crawl4ai.com/core/ --output-dir /tmp/my-crawl
 
 # Explicit match pattern
-python doublefinger.py crawl https://docs.crawl4ai.com/ --match "https://docs.crawl4ai.com/**"
+doublefinger crawl https://docs.crawl4ai.com/ --match "https://docs.crawl4ai.com/**"
 ```
 
-**4. List outputs:**
+**3. List outputs:**
 
 ```bash
-python doublefinger.py list
+doublefinger list
+```
+
+---
+
+## Development
+
+For contributors who want to work on the code, `setup.sh` creates a local
+virtualenv without touching any system paths:
+
+```bash
+./setup.sh
+source .venv/bin/activate
+python doublefinger.py --help
 ```
 
 ---
@@ -153,7 +167,7 @@ python3 -m pytest tests/ -v
 
 | File | Covers |
 |------|--------|
-| `tests/test_config.py` | Config creation with defaults, reading existing config, tilde expansion in `base_dir`, malformed TOML error handling, CLI flag overrides |
+| `tests/test_config.py` | Config creation with defaults, reading existing config, tilde expansion in `base_dir`, malformed TOML error handling, CLI flag overrides, entry point importability |
 | `tests/test_outputs.py` | Output directory name derivation (5 URL cases), per-page filename derivation (3 cases), directory creation, `list` metadata (file count, size, last modified) |
 | `tests/test_crawler.py` | URL match pattern auto-derivation (3 cases), failed page warning without crash, `max_pages=1` stops after one page |
 
@@ -162,6 +176,12 @@ All tests use `tempfile` for filesystem operations and `unittest.mock` only for 
 ---
 
 ## Changelog
+
+### v0.1.2 — 2026-04-17
+- Renamed `build.sh` to `setup.sh` (development environment setup)
+- Added `install.sh` (system-wide installation of the `doublefinger` command)
+- README: updated How to Run section, added Development section
+- TDD: added `test_entry_point_importable` (21 tests, 21 passing)
 
 ### v0.1.1 — 2026-04-17
 - README: replaced example URLs with Crawl4AI documentation site
