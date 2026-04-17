@@ -74,6 +74,7 @@ python doublefinger.py crawl <url> [options]
 | `--output-dir PATH` | Override the default output directory |
 | `--browser` | Force Playwright headless browser mode (default: simple HTTP mode) |
 | `--no-cache` | Disable Crawl4AI's built-in cache |
+| `--wait N` | Seconds to wait after page load before extracting content. Use with `--browser` for JS-heavy SPAs (default: 0) |
 
 **Output directory naming:**
 
@@ -132,6 +133,10 @@ doublefinger crawl https://docs.crawl4ai.com/core/ --output-dir /tmp/my-crawl
 
 # Explicit match pattern
 doublefinger crawl https://docs.crawl4ai.com/ --match "https://docs.crawl4ai.com/**"
+
+# Crawl a JavaScript-heavy jobs page with browser + wait
+doublefinger crawl https://jobs.proximus.com/be/en/proximus \
+  --browser --wait 3
 ```
 
 **3. List outputs:**
@@ -169,13 +174,19 @@ python3 -m pytest tests/ -v
 |------|--------|
 | `tests/test_config.py` | Config creation with defaults, reading existing config, tilde expansion in `base_dir`, malformed TOML error handling, CLI flag overrides, entry point importability |
 | `tests/test_outputs.py` | Output directory name derivation (5 URL cases), per-page filename derivation (3 cases), directory creation, `list` metadata (file count, size, last modified) |
-| `tests/test_crawler.py` | URL match pattern auto-derivation (3 cases), failed page warning without crash, `max_pages=1` stops after one page |
+| `tests/test_crawler.py` | URL match pattern auto-derivation (3 cases), failed page warning without crash, `max_pages=1` stops after one page, `--wait` default/value/negative validation, `delay_before_return_html` passed to Crawl4AI |
 
 All tests use `tempfile` for filesystem operations and `unittest.mock` only for Crawl4AI HTTP calls.
 
 ---
 
 ## Changelog
+
+### v0.1.3 — 2026-04-17
+- Added `--wait N` flag to `crawl` command
+- Passes `delay_before_return_html` to Crawl4AI for SPA support
+- TDD: 5 new tests written and passing (26 total)
+- README: updated Commands and How to Run sections
 
 ### v0.1.2 — 2026-04-17
 - Renamed `build.sh` to `setup.sh` (development environment setup)

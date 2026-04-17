@@ -52,6 +52,7 @@ def cmd_crawl(args: argparse.Namespace, cfg: dict) -> None:
             output_dir=output_dir,
             use_browser=args.browser,
             no_cache=args.no_cache,
+            wait=args.wait,
         )
     )
 
@@ -97,6 +98,27 @@ def _human_size(size: int) -> str:
     return f"{size:.1f}TB"
 
 
+def _non_negative_int(value: str) -> int:
+    """Argparse type function that accepts only non-negative integers.
+
+    Args:
+        value: Raw string value from the command line.
+
+    Returns:
+        The parsed integer.
+
+    Raises:
+        argparse.ArgumentTypeError: If ``value`` parses to a negative integer.
+    """
+    try:
+        ivalue = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a valid integer")
+    if ivalue < 0:
+        raise argparse.ArgumentTypeError(f"--wait must be >= 0, got {ivalue}")
+    return ivalue
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build and return the top-level argument parser.
 
@@ -123,6 +145,16 @@ def build_parser() -> argparse.ArgumentParser:
                          help="Force Playwright headless browser mode")
     crawl_p.add_argument("--no-cache", action="store_true", dest="no_cache",
                          help="Disable Crawl4AI's built-in cache")
+    crawl_p.add_argument(
+        "--wait",
+        type=_non_negative_int,
+        default=0,
+        metavar="SECONDS",
+        help=(
+            "Seconds to wait after page load before extracting content. "
+            "Use with --browser for JavaScript-heavy pages (default: 0)"
+        ),
+    )
 
     subparsers.add_parser("list", help="List crawl output directories")
 

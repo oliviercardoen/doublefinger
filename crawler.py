@@ -4,7 +4,7 @@ Implements:
 - URL match-pattern derivation from a seed URL.
 - A breadth-first async crawl loop that writes one Markdown file per page.
 - Graceful handling of failed pages (warning, no crash).
-- Optional headless-browser mode and cache bypass.
+- Optional headless-browser mode, cache bypass, and post-load wait delay.
 """
 
 import fnmatch
@@ -14,10 +14,12 @@ from urllib.parse import urlparse
 
 try:
     from crawl4ai import AsyncWebCrawler
+    from crawl4ai import CrawlerRunConfig
 except ImportError:
     # Defer the hard error to runtime so the module can still be imported
     # and tested without Crawl4AI installed.
     AsyncWebCrawler = None
+    CrawlerRunConfig = None
 
 from outputs import derive_page_filename
 
@@ -49,6 +51,18 @@ def derive_match_pattern(url: str) -> str:
     return f"{base}/{segments[0]}/**"
 
 
+def derive_wait_config(wait: int) -> float:
+    """Convert an integer wait value to the float expected by Crawl4AI.
+
+    Args:
+        wait: Seconds to wait after page load, as provided by the CLI flag.
+
+    Returns:
+        ``float(wait)``, giving ``0.0`` when no wait is requested.
+    """
+    return float(wait)
+
+
 def _url_matches(url: str, pattern: str) -> bool:
     """Return True if ``url`` matches the given glob ``pattern``."""
     return fnmatch.fnmatch(url, pattern)
@@ -61,6 +75,7 @@ async def crawl_site(
     output_dir: Path,
     use_browser: bool,
     no_cache: bool,
+    wait: int = 0,
 ) -> None:
     """Crawl a website breadth-first and write each page as a Markdown file.
 
@@ -83,6 +98,9 @@ async def crawl_site(
         use_browser: When ``True``, Crawl4AI uses a Playwright headless
             Chromium browser instead of a plain HTTP fetch.
         no_cache: When ``True``, bypasses Crawl4AI's built-in response cache.
+        wait: Seconds to wait after page load before extracting content.
+            Passed as ``delay_before_return_html`` to :class:`CrawlerRunConfig`.
+            Useful for JavaScript-heavy SPAs. ``0`` disables the delay.
 
     Raises:
         SystemExit: If Crawl4AI is not installed.
@@ -110,11 +128,13 @@ async def crawl_site(
 
             print(f"Crawling: {url}")
 
-            run_kwargs = {}
+            run_config_kwargs = {}
             if no_cache:
-                run_kwargs["cache_mode"] = "bypass"
+                run_config_kwargs["cache_mode"] = "bypass"
+            run_config_kwargs["delay_before_return_html"] = derive_wait_config(wait)
 
-            result = await crawler.arun(url=url, **run_kwargs)
+            config = CrawlerRunConfig(**run_config_kwargs)
+            result = await crawler.arun(url=url, config=config)
 
             if not result.success:
                 warnings.warn(f"Failed to crawl {url}", UserWarning, stacklevel=1)
