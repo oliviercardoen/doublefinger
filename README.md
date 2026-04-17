@@ -79,15 +79,15 @@ python doublefinger.py crawl <url> [options]
 The seed URL is converted to a directory name by reversing the hostname and prepending the first path segment:
 
 ```
-https://iac.goffinet.org/ansible-fondamental/
-→ org.goffinet.iac.ansible-fondamental
+https://docs.crawl4ai.com/core/
+→ com.crawl4ai.docs.core
 ```
 
 One `.md` file per crawled page, named from the URL path:
 
 ```
-https://iac.goffinet.org/ansible-fondamental/installation-ansible/
-→ ansible-fondamental-installation-ansible.md
+https://docs.crawl4ai.com/core/quickstart/
+→ core-quickstart.md
 ```
 
 ### `list`
@@ -117,20 +117,20 @@ source .venv/bin/activate
 **3. Crawl a site:**
 
 ```bash
-# Crawl the ansible-fondamental section of iac.goffinet.org
-python doublefinger.py crawl https://iac.goffinet.org/ansible-fondamental/
+# Crawl the core section of docs.crawl4ai.com
+python doublefinger.py crawl https://docs.crawl4ai.com/core/
 
 # Limit to 10 pages
-python doublefinger.py crawl https://iac.goffinet.org/ansible-fondamental/ --max-pages 10
+python doublefinger.py crawl https://docs.crawl4ai.com/core/ --max-pages 10
 
 # Use headless browser mode
-python doublefinger.py crawl https://iac.goffinet.org/ansible-fondamental/ --browser
+python doublefinger.py crawl https://docs.crawl4ai.com/core/ --browser
 
 # Custom output directory
-python doublefinger.py crawl https://iac.goffinet.org/ansible-fondamental/ --output-dir /tmp/my-crawl
+python doublefinger.py crawl https://docs.crawl4ai.com/core/ --output-dir /tmp/my-crawl
 
 # Explicit match pattern
-python doublefinger.py crawl https://iac.goffinet.org/ --match "https://iac.goffinet.org/**"
+python doublefinger.py crawl https://docs.crawl4ai.com/ --match "https://docs.crawl4ai.com/**"
 ```
 
 **4. List outputs:**
@@ -162,6 +162,10 @@ All tests use `tempfile` for filesystem operations and `unittest.mock` only for 
 ---
 
 ## Changelog
+
+### v0.1.1 — 2026-04-17
+- README: replaced example URLs with Crawl4AI documentation site
+- No code changes
 
 ### v0.1.0 — 2026-04-17
 - Initial implementation: `crawl` and `list` commands
