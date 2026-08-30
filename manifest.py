@@ -96,6 +96,21 @@ def content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def file_hash(path: Path) -> str:
+    """Return the SHA-256 hex digest of a file's bytes.
+
+    Because pages are written as UTF-8, this matches
+    :func:`content_hash` of the Markdown that produced the file — but it is
+    computed from disk, so it stays correct for files doublefinger did not
+    write, or that were edited afterwards.
+    """
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def record_page(
     manifest: dict, url: str, filename: str, content: str, links: list
 ) -> None:

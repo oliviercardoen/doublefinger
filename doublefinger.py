@@ -1,14 +1,16 @@
 """doublefinger — CLI entry point.
 
-Exposes two sub-commands via argparse (stdlib only):
+Exposes three sub-commands via argparse (stdlib only):
 
     crawl   Crawl a website and save pages as Markdown files.
     list    List all existing crawl output directories.
+    merge   Merge several crawl directories into one, de-duplicating pages.
 
 Usage::
 
     python doublefinger.py crawl <url> [options]
     python doublefinger.py list
+    python doublefinger.py merge <dir> [<dir> ...] --into <dest>
 """
 
 import argparse
@@ -18,6 +20,7 @@ from pathlib import Path
 
 from config import ConfigError, load_config, apply_overrides
 from crawler import derive_match_pattern, crawl_site
+from merge import merge_outputs, resolve_output_dir
 from outputs import derive_output_name, ensure_output_dir, list_outputs
 
 
@@ -84,6 +87,45 @@ def cmd_list(args: argparse.Namespace, cfg: dict) -> None:
     for e in entries:
         size_str = _human_size(e["total_size"])
         print(f"{e['name']:<45} {e['file_count']:>6} {size_str:>10} {e['last_modified']}")
+
+
+def cmd_merge(args: argparse.Namespace, cfg: dict) -> None:
+    """Execute the ``merge`` sub-command.
+
+    Resolves each source and the destination against the configured
+    ``base_dir``, delegates to :func:`merge.merge_outputs`, then prints what
+    was copied, de-duplicated, renamed, or superseded.
+
+    Args:
+        args: Parsed CLI arguments (from :func:`build_parser`).
+        cfg: Effective configuration dict.
+    """
+    base_dir = Path(cfg["output"]["base_dir"])
+    sources = [resolve_output_dir(name, base_dir) for name in args.sources]
+    dest = resolve_output_dir(args.into, base_dir)
+
+    report = merge_outputs(sources, dest, dry_run=args.dry_run)
+
+    for label in report["copied"]:
+        print(f"  copy      {label}")
+    for original, new_name in report["renamed"]:
+        print(f"  rename    {original} → {new_name} (filename already taken)")
+    for label in report["replaced_older"]:
+        print(f"  replace   {label}")
+    for label in report["kept_newer"]:
+        print(f"  keep      {label}")
+    for label in report["skipped_identical"]:
+        print(f"  duplicate {label}")
+
+    prefix = "Would merge" if args.dry_run else "Merged"
+    print(
+        f"\n{prefix} {len(sources)} director{'y' if len(sources) == 1 else 'ies'} "
+        f"into {dest}: {report['total_pages']} page(s), "
+        f"{len(report['copied'])} copied, "
+        f"{len(report['skipped_identical'])} duplicate(s) skipped."
+    )
+    if args.dry_run:
+        print("Nothing was written (--dry-run).")
 
 
 def _human_size(size: int) -> str:
@@ -177,6 +219,32 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("list", help="List crawl output directories")
 
+    merge_p = subparsers.add_parser(
+        "merge",
+        help="Merge crawl directories into one, de-duplicating pages",
+    )
+    merge_p.add_argument(
+        "sources",
+        nargs="+",
+        metavar="DIR",
+        help=(
+            "Crawl directories to merge, as names shown by `list` or as paths. "
+            "Processed in order: the first one wins ties."
+        ),
+    )
+    merge_p.add_argument(
+        "--into",
+        required=True,
+        metavar="DEST",
+        help="Destination directory, as a name or a path. Created if missing",
+    )
+    merge_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="Report what would be merged without writing anything",
+    )
+
     return parser
 
 
@@ -212,6 +280,8 @@ def main() -> None:
         cmd_crawl(args, cfg)
     elif args.command == "list":
         cmd_list(args, cfg)
+    elif args.command == "merge":
+        cmd_merge(args, cfg)
 
 
 if __name__ == "__main__":

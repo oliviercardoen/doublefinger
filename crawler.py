@@ -222,7 +222,7 @@ async def crawl_site(
 
             filename = derive_page_filename(url)
             content = result.markdown or ""
-            (output_dir / filename).write_text(content)
+            (output_dir / filename).write_text(content, encoding="utf-8")
 
             links = _matching_links(result, url, match_pattern)
             for href in links:
