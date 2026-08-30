@@ -28,6 +28,9 @@ def cmd_crawl(args: argparse.Namespace, cfg: dict) -> None:
     config, creates the output directory, then delegates to
     :func:`crawler.crawl_site` via ``asyncio.run``.
 
+    Resuming is the default: pages already recorded in the output
+    directory's manifest are skipped unless ``--force`` was given.
+
     Args:
         args: Parsed CLI arguments (from :func:`build_parser`).
         cfg: Effective configuration dict (overrides already applied).
@@ -53,6 +56,7 @@ def cmd_crawl(args: argparse.Namespace, cfg: dict) -> None:
             use_browser=args.browser,
             no_cache=args.no_cache,
             wait=args.wait,
+            resume=not args.force,
         )
     )
 
@@ -154,6 +158,21 @@ def build_parser() -> argparse.ArgumentParser:
             "Seconds to wait after page load before extracting content. "
             "Use with --browser for JavaScript-heavy pages (default: 0)"
         ),
+    )
+
+    resume_group = crawl_p.add_mutually_exclusive_group()
+    resume_group.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "Skip pages already recorded in the output directory's manifest "
+            "and only fetch new ones (default)"
+        ),
+    )
+    resume_group.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-crawl every page and rebuild the manifest from scratch",
     )
 
     subparsers.add_parser("list", help="List crawl output directories")

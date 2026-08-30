@@ -4,7 +4,7 @@ A CLI wrapper around [Crawl4AI](https://github.com/unclecode/crawl4ai) that craw
 
 ## Project Overview
 
-**Purpose:** crawl a website starting from a seed URL, follow internal links matching a glob pattern, and write one Markdown file per page into a structured output directory — without knowing the Crawl4AI API by heart.
+**Purpose:** crawl a website starting from a seed URL, follow internal links matching a glob pattern, and write one Markdown file per page into a structured output directory — without knowing the Crawl4AI API by heart. Repeated crawls of the same site are de-duplicated rather than re-fetched.
 
 **Stack:** Python 3.10+, Crawl4AI, argparse (stdlib), tomllib/tomli, asyncio.
 
@@ -17,8 +17,9 @@ A CLI wrapper around [Crawl4AI](https://github.com/unclecode/crawl4ai) that craw
 ```
 doublefinger/
 ├── doublefinger.py   # CLI entry point — argparse wiring, dispatches to modules
-├── crawler.py        # Crawl4AI crawling logic, URL pattern derivation
-├── outputs.py        # Output directory naming, page filename derivation, list command
+├── crawler.py        # Crawl4AI crawling logic, URL pattern derivation, resumable BFS
+├── outputs.py        # URL normalization, output directory naming, page filenames, list command
+├── manifest.py       # Per-directory .doublefinger.json manifest (dedup + resume)
 ├── config.py         # Config file load/write (~/.config/doublefinger/config.toml)
 ├── install.sh        # System-wide installation (writes /usr/local/bin/doublefinger)
 ├── setup.sh          # Development environment setup (venv + deps + playwright)
@@ -26,8 +27,9 @@ doublefinger/
 └── tests/
     ├── __init__.py
     ├── test_config.py    # Config loading, defaults, tilde expansion, overrides
-    ├── test_outputs.py   # Directory naming, page filename derivation, list metadata
-    └── test_crawler.py   # URL pattern derivation, failed page handling, max_pages
+    ├── test_outputs.py   # URL normalization, directory naming, page filenames, list metadata
+    ├── test_manifest.py  # Manifest round-trip, corruption handling, recorded-page checks
+    └── test_crawler.py   # URL pattern derivation, failed page handling, max_pages, resume
 ```
 
 ---
@@ -75,6 +77,8 @@ python doublefinger.py crawl <url> [options]
 | `--browser` | Force Playwright headless browser mode (default: simple HTTP mode) |
 | `--no-cache` | Disable Crawl4AI's built-in cache |
 | `--wait N` | Seconds to wait after page load before extracting content. Use with `--browser` for JS-heavy SPAs (default: 0) |
+| `--resume` | Skip pages already recorded in the output directory's manifest (this is the default) |
+| `--force` | Re-crawl every page and rebuild the manifest from scratch. Mutually exclusive with `--resume` |
 
 **Output directory naming:**
 
@@ -90,6 +94,52 @@ One `.md` file per crawled page, named from the URL path:
 ```
 https://docs.crawl4ai.com/core/quickstart/
 → core-quickstart.md
+```
+
+**Deduplication and resuming:**
+
+Every URL is normalized before it is fetched or written, so one page has one
+identity. Normalization lowercases the scheme and host, drops the default
+port, drops the `#fragment`, strips tracking parameters (`utm_*`, `fbclid`,
+`gclid`, …), sorts any remaining query parameters, and removes the trailing
+slash:
+
+```
+https://Example.com:443/docs/?utm_source=news#intro  →  https://example.com/docs
+https://example.com/docs                             →  https://example.com/docs
+```
+
+Query parameters that are *not* tracking parameters are kept, and they are
+part of the filename, so `?page=2` gets its own file instead of silently
+overwriting `blog.md`.
+
+Each output directory carries a `.doublefinger.json` manifest recording, per
+page, the file written, a SHA-256 of its content, the crawl date, and the
+links followed from it. It is rewritten after every page, so an interrupted
+crawl stays resumable.
+
+Resuming is the **default**: a page already in the manifest is not fetched
+again. Its recorded links are pushed back onto the queue instead, so the
+crawl frontier survives across runs and only genuinely new URLs cost a
+request. This is what makes repeated crawls over the same section cheap:
+
+```bash
+# First run fetches the whole /core/ subtree
+doublefinger crawl https://docs.crawl4ai.com/core/
+
+# Same subtree, different entry point: nothing is fetched twice
+doublefinger crawl https://docs.crawl4ai.com/core/quickstart/
+# → Crawled 0 page(s), skipped 24 already in the manifest
+```
+
+Deleting a `.md` file is enough to make the next run fetch that page again.
+
+Because skipped pages are never re-fetched, links *added* to an already
+crawled page are not discovered on a resumed run. Use `--force` to pick up
+changes to a site you have already crawled:
+
+```bash
+doublefinger crawl https://docs.crawl4ai.com/core/ --force
 ```
 
 ### `list`
@@ -145,6 +195,7 @@ doublefinger crawl https://jobs.proximus.com/be/en/proximus \
 doublefinger list
 ```
 
+
 ---
 
 ## Development
@@ -165,7 +216,7 @@ python doublefinger.py --help
 **Run tests:**
 
 ```bash
-python3 -m pytest tests/ -v
+python3 -m unittest discover -s tests -t . -v
 ```
 
 **Test files:**
@@ -173,14 +224,29 @@ python3 -m pytest tests/ -v
 | File | Covers |
 |------|--------|
 | `tests/test_config.py` | Config creation with defaults, reading existing config, tilde expansion in `base_dir`, malformed TOML error handling, CLI flag overrides, entry point importability |
-| `tests/test_outputs.py` | Output directory name derivation (5 URL cases), per-page filename derivation (3 cases), directory creation, `list` metadata (file count, size, last modified) |
-| `tests/test_crawler.py` | URL match pattern auto-derivation (3 cases), failed page warning without crash, `max_pages=1` stops after one page, `--wait` default/value/negative validation, `delay_before_return_html` passed to Crawl4AI |
+| `tests/test_outputs.py` | URL normalization (slash, case, port, fragment, tracking params, query sorting), output directory name derivation (5 URL cases), per-page filename derivation including query and long-name truncation, directory creation, `list` metadata |
+| `tests/test_manifest.py` | Manifest save/load round-trip, content hashing, corrupt and malformed manifest handling, recorded-page checks against files on disk, exclusion from `list` counts |
+| `tests/test_crawler.py` | URL match pattern auto-derivation (3 cases), failed page warning without crash, `max_pages` stops after N pages, `--wait` default/value/negative validation, `delay_before_return_html` passed to Crawl4AI, URL-variant deduplication, relative link resolution, resume/`--force` behaviour, frontier restoration |
 
 All tests use `tempfile` for filesystem operations and `unittest.mock` only for Crawl4AI HTTP calls.
 
 ---
 
 ## Changelog
+
+### v0.1.4 — 2026-08-30
+- Added URL normalization: one page now has one identity, so variants
+  differing only by trailing slash, case, default port, fragment or tracking
+  parameters are crawled and written once
+- Query strings are kept in page filenames, so paginated URLs no longer
+  overwrite each other
+- Added a per-directory `.doublefinger.json` manifest (`manifest.py`)
+  recording file, content hash, crawl date and followed links
+- Added `--resume` (default) and `--force` flags to `crawl`
+- Relative link hrefs are now resolved against the page instead of dropped
+- A section index (`/docs`) is no longer excluded from its own `/docs/**` subtree
+- Long page paths are truncated with a digest suffix instead of failing to write
+- TDD: 35 new tests written and passing (61 total)
 
 ### v0.1.3 — 2026-04-17
 - Added `--wait N` flag to `crawl` command
